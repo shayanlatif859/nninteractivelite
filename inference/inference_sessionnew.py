@@ -634,11 +634,13 @@ class nnInteractiveInferenceSessionnew():
 
         D, H, W = image.shape[1:]
 
-        if region_center is not None:
+        print("[debug] self.new_interaction_centers=", self.new_interaction_centers)
 
-            print('region_center =', region_center)
+        if self.new_interaction_centers is not None:
 
-            cz, cy, cx = region_center
+            print('self.new_interaction_centers =', self.new_interaction_centers)
+
+            cz, cy, cx = self.new_interaction_centers
             pD, pH, pW = patch_size
             D, H, W = image.shape[1:]
 
@@ -683,6 +685,7 @@ class nnInteractiveInferenceSessionnew():
             abs_y:abs_y + pred_seg.shape[1],
             abs_x:abs_x + pred_seg.shape[2]
             ] = pred_seg
+
 
         for z in range(0, D, stride[0]):
             for y in range(0, H, stride[1]):
@@ -1214,28 +1217,40 @@ class nnInteractiveInferenceSessionnew():
 
     def initialize_from_onnx_model(self, model_path: str):
         # stub values for onnx
+
+        global onnx_session_initialized
+
         print("[debug] initialize_from_onnx_model HAS BEEN CALLED!")
-        point_interaction_radius = 4
-        point_interaction_use_etd = True
-        self.point_interaction = PointInteraction_stub(
-            point_interaction_radius,
-            point_interaction_use_etd)
+        point_radius = 4
         self.pad_mode_data = "constant"
         self.point_interaction = PointInteraction_stub(
-            point_interaction_radius=4,
+            point_radius,
             use_etd=True
         )
         self.interaction_decay = 0.9
-
         # Dummy or default configuration
-        dummy_config = ConfigurationManager.default_configuration()  # or manually construct one
-        dummy_plans = PlansManager.default_plans()  # if available
-        dummy_labels = dummy_plans.get_label_manager({})
+        # wahh! i commented this all out! i am too lazy to find the actual dummies for these.
+        # self.configuration_manager = configuration_manager
+        # dummy_plans = PlansManager.default_plans()
+        # dummy_labels = dummy_plans.get_label_manager({})
 
-        self.configuration_manager = dummy_config
-        self.plans_manager = dummy_plans
-        self.label_manager = dummy_labels
-        self.dataset_json = {}
+        # self.plans_manager = dummy_plans
+        # self.label_manager = dummy_labels
+        # self.dataset_json = {}
+
+        # Run ONNX session
+        import onnxruntime as ort
+        self.onnx_session = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
+
+
+        for inp in self.onnx_session.get_inputs():
+            print("Input name:", inp.name)
+            print("Shape:", inp.shape)
+            print("Type:", inp.type)
+
+        self.network = ONNXWrapper(self.onnx_session)
+        print("ONNX model loaded successfully.")
+
 
         import onnxruntime as ort
         self.session = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])

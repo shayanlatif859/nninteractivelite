@@ -637,37 +637,72 @@ class nnInteractiveInferenceSessionnew():
         print("[debug] self.new_interaction_centers=", self.new_interaction_centers)
 
         if self.new_interaction_centers is not None:
+            print('it worked!! self.new_interaction_centers =', self.new_interaction_centers)
 
-            print('self.new_interaction_centers =', self.new_interaction_centers)
-
-            cz, cy, cx = self.new_interaction_centers
+            # Use most recent center
+            cz, cy, cx = self.new_interaction_centers[-1]
             pD, pH, pW = patch_size
             D, H, W = image.shape[1:]
+            print ("[debug] self.new_interaction_centers =", self.new_interaction_centers)
+            print ("[debug] patch_size =", patch_size)
+            print ("image.shape", {image.shape})
+
 
             # Calculate patch bounds
             z = max(0, min(D - pD, cz - pD // 2))
             y = max(0, min(H - pH, cy - pH // 2))
             x = max(0, min(W - pW, cx - pW // 2))
 
+            scaled_bbox = []
+
+            for c, p, dim in zip(self.new_interaction_centers[-1], patch_size, self.preprocessed_image.shape[1:]):
+                half = p // 2
+                start = max(0, c - half)
+                end = min(dim, c + half + (p % 2))
+                scaled_bbox.append([start, end])
+            print("[debug] scaled_patch_size:", patch_size)
+            print("[debug] scaled_bbox:", scaled_bbox)
+
+            print(f"patch bounds z,y,x:{z,y,x}")
             # Extract patch
             patch_image = image[:, z:z + pD, y:y + pH, x:x + pW]
             patch_interaction = interaction[:, z:z + pD, y:y + pH, x:x + pW]
 
+            print("[debug] patch_interaction.shape =", patch_interaction.shape)
+            print("[debug] patch_image.shape =", patch_image.shape)
+
+            if patch_image.shape[0] == 1:
+                print("padding to patch_image")
+                patch_image = np.repeat(patch_image, 4, axis=0)
+                print("[debug] patch_image.shape now after we padded it up =", patch_image.shape)
+                print("[debug] patch_interaction.shape =", patch_interaction.shape)
+
             # Run inference
+            print("[debug] patch_image.shape =", patch_image.shape)
+
+            if patch_image.shape[0] < 4:
+                # Replicate the single channel into 4
+                patch_image = np.repeat(patch_image, 4, axis=0)
+
             model_input = np.concatenate([patch_image, patch_interaction], axis=0)[np.newaxis]
+
+            print(f"self.input_name: {self.input_name}")
+            print(f"model_input.shape: {model_input.shape}")
+            print(f"model_input.dtype: {model_input.dtype}")
+
             pred = self.onnx_session.run(None, {self.input_name: model_input})[0][0]
             pred_seg = np.argmax(pred, axis=0).astype(np.uint8)  # [D, H, W]
 
             # Overlay prediction into correct place in the target buffer
             # We may need to uncrop using z0/y0/x0 offsets!
             z0, y0, x0 = z_range[0], y_range[0], x_range[0]
-
             abs_z = z + z0
             abs_y = y + y0
             abs_x = x + x0
 
             # Flip axes if needed (match for full image)
             pred_seg = np.flip(pred_seg, axis=(1, 2))
+
             target_slice = self.target_buffer[
                            abs_z:abs_z + pred_seg.shape[0],
                            abs_y:abs_y + pred_seg.shape[1],
@@ -726,7 +761,7 @@ class nnInteractiveInferenceSessionnew():
                         input_data = np.concatenate([input_data, padding], axis=1)
                         print(f"[debug] Zero-padded input_data to shape {input_data.shape}")
 
-                    pred_logits = self.network.run(None, {self.input_name: input_data})[0]
+                    pred_logits = self.onnx_session.run(None, {self.input_name: input_data})[0]
                     pred_seg = np.argmax(pred_logits[0], axis=0).astype(np.uint8)
 
                     dz = patch_bbox[0][1] - patch_bbox[0][0]
